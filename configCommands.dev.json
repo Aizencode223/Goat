@@ -1,121 +1,156 @@
-// 📌 Installation requise :
-// npm install express body-parser request
+const activeGames = {}; // Parties de devinette et quiz
+const userData = {};    // Stocke l'argent virtuel quotidien et jackpot
 
-const express = require('express');
-const bodyParser = require('body-parser');
-const request = require('request');
+module.exports = {
+    config: {
+        name: "main",
+        description: "Toutes les commandes principales du bot avec mini-jeux et bonus",
+        usage: "/start /help /about /ping /joke /quote /devine /ppt /quiz /daily /jackpot /appraise"
+    },
+    run: async ({ api, event, args }) => {
+        const userID = event.senderID;
+        const input = args.join(" ").toLowerCase();
 
-const app = express().use(bodyParser.json());
+        if (!userData[userID]) userData[userID] = { balance: 0, lastDaily: 0 };
 
-// ✅ Remplace par tes propres infos
-const VERIFY_TOKEN = "TON_VERIFY_TOKEN";
-const PAGE_ACCESS_TOKEN = "TON_PAGE_ACCESS_TOKEN";
+        // -------- /start --------
+        if (input === "start") return api.sendMessage("Salut 👋 ! Je suis ton bot. Tape /help pour voir toutes mes commandes.", event.threadID);
 
-// 📌 Vérification du webhook Messenger
-app.get('/webhook', (req, res) => {
-    const mode = req.query['hub.mode'];
-    const token = req.query['hub.verify_token'];
-    const challenge = req.query['hub.challenge'];
-
-    if (mode && token) {
-        if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-            console.log('✅ Webhook vérifié');
-            res.status(200).send(challenge);
-        } else {
-            res.sendStatus(403);
+        // -------- /help --------
+        if (input === "help") {
+            const message = "Voici mes commandes :\n\n" +
+                            "/start - Démarrer le bot\n" +
+                            "/help - Liste des commandes\n" +
+                            "/about - Infos sur le bot\n" +
+                            "/ping - Test de réactivité\n" +
+                            "/joke - Une blague\n" +
+                            "/quote - Citation inspirante\n" +
+                            "/devine - Jeu de devinette\n" +
+                            "/ppt [pierre|papier|ciseaux] - Pierre-Papier-Ciseaux\n" +
+                            "/quiz - Quiz rapide\n" +
+                            "/daily - Bonus quotidien\n" +
+                            "/jackpot - Jeu de hasard\n" +
+                            "/appraise [objet/personne] - Évaluer un objet ou une personne";
+            return api.sendMessage(message, event.threadID);
         }
-    }
-});
 
-// 📌 Réception des messages
-app.post('/webhook', (req, res) => {
-    const body = req.body;
+        // -------- /about --------
+        if (input === "about") return api.sendMessage("Bot créé par Manassé Arama. Objectif : t’amuser et t’aider !", event.threadID);
 
-    if (body.object === 'page') {
-        body.entry.forEach(entry => {
-            const webhook_event = entry.messaging[0];
-            const sender_psid = webhook_event.sender.id;
+        // -------- /ping --------
+        if (input === "ping") return api.sendMessage("Pong 🏓", event.threadID);
 
-            if (webhook_event.message && webhook_event.message.text) {
-                handleMessage(sender_psid, webhook_event.message.text.toLowerCase());
+        // -------- /joke --------
+        if (input === "joke") {
+            const jokes = [
+                "Pourquoi les programmeurs confondent Halloween et Noël ? Parce que OCT 31 == DEC 25.",
+                "Quel est le comble pour un développeur ? Avoir un bug dans sa peluche.",
+                "Pourquoi les développeurs n'aiment pas la nature ? Trop de bugs."
+            ];
+            return api.sendMessage(jokes[Math.floor(Math.random() * jokes.length)], event.threadID);
+        }
+
+        // -------- /quote --------
+        if (input === "quote") {
+            const quotes = [
+                "Le succès, c'est tomber 7 fois et se relever 8.",
+                "La seule limite à nos réalisations de demain, ce sont nos doutes d'aujourd'hui.",
+                "Croyez en vous et tout devient possible."
+            ];
+            return api.sendMessage(quotes[Math.floor(Math.random() * quotes.length)], event.threadID);
+        }
+
+        // -------- /ppt --------
+        if (input.startsWith("ppt")) {
+            const choices = ["pierre", "papier", "ciseaux"];
+            if (!args[1] || !choices.includes(args[1].toLowerCase())) return api.sendMessage("Usage : /ppt pierre | papier | ciseaux", event.threadID);
+            const userChoice = args[1].toLowerCase();
+            const botChoice = choices[Math.floor(Math.random() * 3)];
+            let result;
+            if (userChoice === botChoice) result = "Égalité !";
+            else if (
+                (userChoice === "pierre" && botChoice === "ciseaux") ||
+                (userChoice === "papier" && botChoice === "pierre") ||
+                (userChoice === "ciseaux" && botChoice === "papier")
+            ) result = "Tu gagnes ! 🎉";
+            else result = "Je gagne ! 😎";
+            return api.sendMessage(`Tu as choisi ${userChoice}.\nJe choisis ${botChoice}.\n${result}`, event.threadID);
+        }
+
+        // -------- /devine --------
+        if (input === "devine") {
+            const number = Math.floor(Math.random() * 10) + 1;
+            activeGames[userID] = { type: "devine", number, attempts: 0 };
+            return api.sendMessage("J’ai choisi un nombre entre 1 et 10… Essaie de le deviner !", event.threadID);
+        }
+        if (activeGames[userID] && activeGames[userID].type === "devine") {
+            const game = activeGames[userID];
+            const guess = parseInt(input);
+            if (isNaN(guess)) return api.sendMessage("Tape un nombre entre 1 et 10 !", event.threadID);
+            game.attempts++;
+            if (guess === game.number) {
+                delete activeGames[userID];
+                return api.sendMessage(`Bravo ! 🎉 Tu as deviné le nombre en ${game.attempts} essais.`, event.threadID);
+            } else if (guess < game.number) return api.sendMessage("Trop petit ! Essaie encore.", event.threadID);
+            else return api.sendMessage("Trop grand ! Essaie encore.", event.threadID);
+        }
+
+        // -------- /quiz --------
+        if (input === "quiz") {
+            activeGames[userID] = { type: "quiz", question: "Quelle est la capitale du Japon ?", answer: "tokyo" };
+            return api.sendMessage("Question : Quelle est la capitale du Japon ?", event.threadID);
+        }
+        if (activeGames[userID] && activeGames[userID].type === "quiz") {
+            const game = activeGames[userID];
+            if (input === game.answer.toLowerCase()) {
+                delete activeGames[userID];
+                return api.sendMessage("Bravo ! ✅ Bonne réponse.", event.threadID);
+            } else {
+                return api.sendMessage("Mauvaise réponse… Essaie encore !", event.threadID);
             }
-        });
-        res.status(200).send('EVENT_RECEIVED');
-    } else {
-        res.sendStatus(404);
-    }
-});
-
-// 📌 Gestion des commandes
-function handleMessage(sender_psid, received_message) {
-    let response;
-
-    // Commandes générales
-    if (received_message === "/start") {
-        response = { text: "Salut 👋 ! Je suis ton bot. Tape /help pour voir toutes mes commandes." };
-    }
-    else if (received_message === "/help") {
-        response = { text: "Commandes : /start /help /about /ping /meme /joke /quote /devine /ppt /quiz" };
-    }
-    else if (received_message === "/about") {
-        response = { text: "Bot créé par Manassé Arama. Objectif : t’amuser et t’aider !" };
-    }
-    else if (received_message === "/ping") {
-        response = { text: "Pong 🏓" };
-    }
-
-    // Fun
-    else if (received_message === "/joke") {
-        let jokes = ["Pourquoi les programmeurs confondent Halloween et Noël ? Parce que OCT 31 == DEC 25.", 
-                     "Quel est le comble pour un développeur ? Avoir un bug dans sa peluche."];
-        response = { text: jokes[Math.floor(Math.random() * jokes.length)] };
-    }
-    else if (received_message === "/quote") {
-        let quotes = ["Le succès, c'est tomber 7 fois et se relever 8.", 
-                      "La seule limite à nos réalisations de demain, ce sont nos doutes d'aujourd'hui."];
-        response = { text: quotes[Math.floor(Math.random() * quotes.length)] };
-    }
-
-    // 🎲 Jeux simples
-    else if (received_message === "/devine") {
-        let number = Math.floor(Math.random() * 10) + 1;
-        response = { text: `J’ai choisi un nombre entre 1 et 10… Essaie de le deviner ! (C'était ${number})` };
-    }
-    else if (received_message.startsWith("/ppt")) {
-        let choices = ["pierre", "papier", "ciseaux"];
-        let botChoice = choices[Math.floor(Math.random() * 3)];
-        response = { text: `J'ai choisi ${botChoice} ✊📄✂️` };
-    }
-    else if (received_message === "/quiz") {
-        response = { text: "Question : Quelle est la capitale du Japon ?" };
-    }
-    else {
-        response = { text: "Commande inconnue. Tape /help pour voir la liste." };
-    }
-
-    callSendAPI(sender_psid, response);
-}
-
-// 📌 Envoi de message
-function callSendAPI(sender_psid, response) {
-    const request_body = {
-        recipient: { id: sender_psid },
-        message: response
-    };
-
-    request({
-        uri: "https://graph.facebook.com/v17.0/me/messages",
-        qs: { access_token: PAGE_ACCESS_TOKEN },
-        method: "POST",
-        json: request_body
-    }, (err, res, body) => {
-        if (!err) {
-            console.log('Message envoyé ✅');
-        } else {
-            console.error("Erreur :", err);
         }
-    });
-}
 
-// 📌 Lancement du serveur
-app.listen(process.env.PORT || 1337, () => console.log('Bot en ligne 🚀'));
+        // -------- /daily --------
+        if (input === "daily") {
+            const now = Date.now();
+            if (now - userData[userID].lastDaily < 86400000) {
+                return api.sendMessage("Tu as déjà pris ton daily aujourd'hui. Reviens demain !", event.threadID);
+            }
+            const amount = Math.floor(Math.random() * 100) + 50;
+            userData[userID].balance += amount;
+            userData[userID].lastDaily = now;
+            return api.sendMessage(`Voici ton daily bonus : ${amount}¥ !\nSolde actuel : ${userData[userID].balance}¥`, event.threadID);
+        }
+
+        // -------- /jackpot --------
+        if (input === "jackpot") {
+            const bet = Math.floor(Math.random() * 100) + 1;
+            const win = Math.random() < 0.5;
+            if (win) {
+                userData[userID].balance += bet;
+                return api.sendMessage(`Jackpot ! 🎰 Tu gagnes ${bet}¥\nSolde actuel : ${userData[userID].balance}¥`, event.threadID);
+            } else {
+                userData[userID].balance = Math.max(0, userData[userID].balance - bet);
+                return api.sendMessage(`Dommage… 😢 Tu perds ${bet}¥\nSolde actuel : ${userData[userID].balance}¥`, event.threadID);
+            }
+        }
+
+        // -------- /appraise --------
+        if (input.startsWith("appraise")) {
+            if (!args[1]) return api.sendMessage("Usage : /appraise [objet/personne]", event.threadID);
+            const target = args.slice(1).join(" ");
+            const ratings = [
+                "Magnifique 😍",
+                "Pas mal 👍",
+                "Moyen 🤔",
+                "Bof 😐",
+                "Catastrophique 💀"
+            ];
+            const rating = ratings[Math.floor(Math.random() * ratings.length)];
+            return api.sendMessage(`${target} : ${rating}`, event.threadID);
+        }
+
+        // -------- Commande inconnue --------
+        return api.sendMessage("Commande inconnue. Tape /help pour voir la liste.", event.threadID);
+    }
+};
