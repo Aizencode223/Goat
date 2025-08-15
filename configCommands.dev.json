@@ -35,5 +35,126 @@
     "logsbot": {
       "allow": true
     }
-  }
+  } 
 }
+// 📌 Installation requise :
+// npm install express body-parser request
+
+const express = require('express');
+const bodyParser = require('body-parser');
+const request = require('request');
+
+const app = express().use(bodyParser.json());
+
+// ✅ Remplace par tes propres infos
+const VERIFY_TOKEN = "TON_VERIFY_TOKEN";
+const PAGE_ACCESS_TOKEN = "TON_PAGE_ACCESS_TOKEN";
+
+// 📌 Vérification du webhook Messenger
+app.get('/webhook', (req, res) => {
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
+
+    if (mode && token) {
+        if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+            console.log('✅ Webhook vérifié');
+            res.status(200).send(challenge);
+        } else {
+            res.sendStatus(403);
+        }
+    }
+});
+
+// 📌 Réception des messages
+app.post('/webhook', (req, res) => {
+    const body = req.body;
+
+    if (body.object === 'page') {
+        body.entry.forEach(entry => {
+            const webhook_event = entry.messaging[0];
+            const sender_psid = webhook_event.sender.id;
+
+            if (webhook_event.message && webhook_event.message.text) {
+                handleMessage(sender_psid, webhook_event.message.text.toLowerCase());
+            }
+        });
+        res.status(200).send('EVENT_RECEIVED');
+    } else {
+        res.sendStatus(404);
+    }
+});
+
+// 📌 Gestion des commandes
+function handleMessage(sender_psid, received_message) {
+    let response;
+
+    // Commandes générales
+    if (received_message === "/start") {
+        response = { text: "Salut 👋 ! Je suis ton bot. Tape /help pour voir toutes mes commandes." };
+    }
+    else if (received_message === "/help") {
+        response = { text: "Commandes : /start /help /about /ping /meme /joke /quote /devine /ppt /quiz" };
+    }
+    else if (received_message === "/about") {
+        response = { text: "Bot créé par Manassé Arama. Objectif : t’amuser et t’aider !" };
+    }
+    else if (received_message === "/ping") {
+        response = { text: "Pong 🏓" };
+    }
+
+    // Fun
+    else if (received_message === "/joke") {
+        let jokes = ["Pourquoi les programmeurs confondent Halloween et Noël ? Parce que OCT 31 == DEC 25.", 
+                     "Quel est le comble pour un développeur ? Avoir un bug dans sa peluche."];
+        response = { text: jokes[Math.floor(Math.random() * jokes.length)] };
+    }
+    else if (received_message === "/quote") {
+        let quotes = ["Le succès, c'est tomber 7 fois et se relever 8.", 
+                      "La seule limite à nos réalisations de demain, ce sont nos doutes d'aujourd'hui."];
+        response = { text: quotes[Math.floor(Math.random() * quotes.length)] };
+    }
+
+    // 🎲 Jeux simples
+    else if (received_message === "/devine") {
+        let number = Math.floor(Math.random() * 10) + 1;
+        response = { text: `J’ai choisi un nombre entre 1 et 10… Essaie de le deviner ! (C'était ${number})` };
+    }
+    else if (received_message.startsWith("/ppt")) {
+        let choices = ["pierre", "papier", "ciseaux"];
+        let botChoice = choices[Math.floor(Math.random() * 3)];
+        response = { text: `J'ai choisi ${botChoice} ✊📄✂️` };
+    }
+    else if (received_message === "/quiz") {
+        response = { text: "Question : Quelle est la capitale du Japon ?" };
+    }
+    else {
+        response = { text: "Commande inconnue. Tape /help pour voir la liste." };
+    }
+
+    callSendAPI(sender_psid, response);
+}
+
+// 📌 Envoi de message
+function callSendAPI(sender_psid, response) {
+    const request_body = {
+        recipient: { id: sender_psid },
+        message: response
+    };
+
+    request({
+        uri: "https://graph.facebook.com/v17.0/me/messages",
+        qs: { access_token: PAGE_ACCESS_TOKEN },
+        method: "POST",
+        json: request_body
+    }, (err, res, body) => {
+        if (!err) {
+            console.log('Message envoyé ✅');
+        } else {
+            console.error("Erreur :", err);
+        }
+    });
+}
+
+// 📌 Lancement du serveur
+app.listen(process.env.PORT || 1337, () => console.log('Bot en ligne 🚀'));
